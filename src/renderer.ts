@@ -11,6 +11,7 @@ const updateInfo = document.getElementById('update-info');
 const updateIcon = updateInfo.querySelector('#icon') as HTMLImageElement;
 const updateText = updateInfo.querySelector('#text');
 const installLink = document.getElementById('install');
+const discordOAuth = document.getElementById('discordOAuth');
 const discordReconnect = document.getElementById('discord-reconnect');
 const packageJson = require('../package.json');
 
@@ -93,6 +94,9 @@ document.addEventListener('click', (event) => {
 	{
 		ipcRenderer.send('discord-reconnect');
 	}
+});
+discordOAuth.addEventListener('click', () => {
+	ipcRenderer.send('discord-oauth');
 });
 
 togglePresence.addEventListener('click', () => {

@@ -24,6 +24,7 @@ const supportedGames = require('./SupportedGames');
 const store = new _store();
 
 const sonyLoginUrl : string = 'https://id.sonyentertainmentnetwork.com/signin/?service_entity=urn:service-entity:psn&response_type=code&client_id=ba495a24-818c-472b-b12d-ff231c1b5745&redirect_uri=https://remoteplay.dl.playstation.net/remoteplay/redirect&scope=psn:clientapp&request_locale=en_US&ui=pr&service_logo=ps&layout_type=popup&smcid=remoteplay&PlatformPrivacyWs1=exempt&error=login_required&error_code=4165&error_description=User+is+not+authenticated#/signin?entry=%2Fsignin';
+const discordOAuthUrl : string = 'https://discordapp.com/api/oauth2/authorize?client_id=457775893746810880&redirect_uri=http%3A%2F%2Flocalhost%2Foauth%2Fredirect&response_type=code&scope=identify';
 
 const logoIcon = nativeImage.createFromPath(path.join(__dirname, '../assets/images/logo.png'));
 
@@ -33,6 +34,7 @@ const trayLogoIcon = nativeImage.createFromPath(path.join(__dirname, '../assets/
 // Windows
 let mainWindow : BrowserWindow;
 let loginWindow : BrowserWindow;
+let discordOAuthWindow : BrowserWindow;
 
 // Instance of the logged in account
 let playstationAccount : PlayStationAccount;
@@ -86,6 +88,74 @@ function showMessageAndDie(message: string, detail?: string) : void
 	});
 }
 
+function spawnDiscordOAuthWindow() : void
+{
+	discordOAuthWindow = new BrowserWindow({
+		width: 414,
+		height: 743,
+		minWidth: 414,
+		minHeight: 763,
+		icon: logoIcon,
+		title: 'Discord OAuth Login',
+		webPreferences: {
+			nodeIntegration: false
+		}
+	});
+
+	discordOAuthWindow.setMenu(null);
+
+	discordOAuthWindow.on('closed', () => {
+		discordOAuthWindow = null;
+	});
+
+	discordOAuthWindow.loadURL(discordOAuthUrl);
+
+	discordOAuthWindow.webContents.on('did-finish-load', () => {
+		const browserUrl : string = discordOAuthWindow.webContents.getURL();
+
+		if (browserUrl.startsWith('http://localhost/oauth/redirect'))
+		{
+			const query : string = queryString.extract(browserUrl);
+			const items : any = queryString.parse(query);
+
+			console.log(items);
+
+			if (!items.code)
+			{
+				log.error('Redirect URL was found but there was no code in the query string', items);
+
+				// Don't die here please.
+				showMessageAndDie(
+					'An error has occurred during the PSN login process. Please try again.',
+					'If the problem persists, please open an issue on the GitHub repo.'
+				);
+			}
+
+			const data : any = {
+				client_id: '457775893746810880',
+				client_secret: '', // Does this really need to be a secret for Discord API calls?
+				grant_type: 'authorization_code',
+				code: items.code,
+				redirect_url: 'http://localhost',
+				scope: 'identify'
+			};
+
+			const headers : any = {
+				'Content-Type': 'application/x-www-form-urlencoded'
+			};
+
+			axios.post('https://discordapp.com/api/v6/oauth2/token', queryString.stringify(data), {
+				headers
+			}).then((response) => {
+				log.debug(response);
+			}).catch((err) => {
+				log.error(err);
+			});
+		}
+	});
+
+}
+
 function spawnLoginWindow() : void
 {
 	loginWindow = new BrowserWindow({
@@ -124,8 +194,6 @@ function spawnLoginWindow() : void
 					'An error has occurred during the PSN login process. Please try again.',
 					'If the problem persists, please open an issue on the GitHub repo.'
 				);
-
-				return;
 			}
 
 			PlayStationAccount.login(items.code)
@@ -635,6 +703,11 @@ ipcMain.on('discord-reconnect', () => {
 	toggleDiscordReconnect(false);
 
 	appEvent.emit('start-rich-presence');
+});
+
+ipcMain.on('discord-oauth', () => {
+	log.debug('got it');
+	spawnDiscordOAuthWindow();
 });
 
 appEvent.on('discord-disconnected', () => {
