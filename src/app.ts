@@ -448,7 +448,7 @@ function getConsoleFromType(type: PlayStationConsoleType) : PlayStationConsole
 	{
 		case PlayStationConsoleType.PS5:
 			return new PlayStation5();
-		case PlayStationConsoleType.PS4:
+		case PlayStationConsoleType.ps4:
 			return new PlayStation4();
 		case PlayStationConsoleType.PS3:
 			return new PlayStation3();
