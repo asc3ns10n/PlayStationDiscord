@@ -19,6 +19,8 @@ import url = require('url');
 import path = require('path');
 import { IBasicPresence } from './Model/PresenceModel';
 
+const _ = require('lodash');
+
 const isDev = process.env.NODE_ENV === 'dev';
 
 const supportedGames = require('./SupportedGames');
@@ -189,7 +191,8 @@ function spawnMainWindow() : void
 		icon: logoIcon,
 		backgroundColor: '#23272a',
 		webPreferences: {
-			nodeIntegration: true
+			nodeIntegration: true,
+			enableRemoteModule: true
 		},
 		frame: false,
 		title: 'PlayStationDiscord'
@@ -217,7 +220,8 @@ function spawnMainWindow() : void
 		.then((profile) => {
 			log.debug('Got PSN profile info', profile);
 			mainWindow.webContents.send('profile-data', profile);
-		}).then((err) => {
+		})
+		.catch((err) => {
 			log.error('Failed fetching PSN profile', err);
 		});
 
@@ -308,8 +312,8 @@ function updateRichPresence() : void
 			let discordRichPresenceOptionsData : IDiscordPresenceUpdateOptions;
 
 			const platform = presence.primaryPlatformInfo.platform;
-			const titleInfo = presence.gameTitleInfoList[0];
-			const previousPresenceTitleInfo = previousPresence.gameTitleInfoList[0];
+			const titleInfo = _.get(presence, ['gameTitleInfoList', 0]);
+			const previousPresenceTitleInfo = _.get(previousPresence, ['gameTitleInfoList', 0]);
 
 			if (previousPresence === undefined || platform !== previousPresence.primaryPlatformInfo.platform)
 			{
@@ -350,10 +354,10 @@ function updateRichPresence() : void
 
 			// Setup previous presence with the current presence if it's empty.
 			// Update status if the titleId has changed.
-			if (previousPresence === undefined || previousPresenceTitleInfo.npTitleId !== titleInfo.npTitleId)
+			if (previousPresence === undefined ||  _.get(previousPresenceTitleInfo, ['npTitleId']) !== _.get(titleInfo, ['npTitleId']))
 			{
 				// See if we're actually playing a title.
-				if (titleInfo.npTitleId === undefined)
+				if (_.get(titleInfo, ['npTitleId']) === undefined)
 				{
 					discordRichPresenceData = {
 						details: 'Online',
@@ -393,7 +397,7 @@ function updateRichPresence() : void
 				}
 			}
 			// Update if game status has changed.
-			else if (previousPresence === undefined || previousPresenceTitleInfo.gameStatus !== titleInfo.gameStatus)
+			else if (previousPresence === undefined || _.get(previousPresenceTitleInfo, ['gameStatus']) !== _.get(titleInfo, ['gameStatus']))
 			{
 				discordRichPresenceData = {
 					details: titleInfo.titleName,
@@ -424,7 +428,6 @@ function updateRichPresence() : void
 			}
 		}
 
-		mainWindow.webContents.send('presence-data', presence);
 		richPresenceRetries = 0;
 	})
 	.catch((err) => {
@@ -447,7 +450,7 @@ function getConsoleFromType(type: PlayStationConsoleType) : PlayStationConsole
 			return new PlayStation5();
 		case PlayStationConsoleType.PS4:
 			return new PlayStation4();
-		case PlayStationConsoleType.PS4:
+		case PlayStationConsoleType.PS3:
 			return new PlayStation3();
 		case PlayStationConsoleType.PSVITA:
 			return new PlayStationVita();
