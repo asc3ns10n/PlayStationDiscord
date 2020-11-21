@@ -179,7 +179,7 @@ export default class PlayStationAccount
 		return new Promise<IProfileModel>((resolve, reject) => {
 			const accessToken = this.data.access_token;
 
-			axios.get<IProfileModel>('https://m.np.playstation.net/api/userProfile/v1/internal/users/me/profiles', {
+			axios.get('https://us-prof.np.community.playstation.net/userProfile/v1/users/me/profile2?fields=onlineId,avatarUrls,plus,primaryOnlineStatus&avatarSizes=m,xl&titleIconSize=s', {
 				headers: {
 					Authorization: `Bearer ${accessToken}`
 				}
@@ -187,9 +187,9 @@ export default class PlayStationAccount
 			.then((response) => {
 				const responseBody = response.data;
 
-				appEvent.emit('profile-data', responseBody);
+				appEvent.emit('profile-data', responseBody.profile);
 
-				return resolve(responseBody);
+				return resolve(responseBody.profile);
 			})
 			.catch((err) => {
 				appEvent.emit('profile-data-failed', err);

@@ -1,20 +1,13 @@
-export interface IPersonalDetail {
-	firstName : string;
-	lastName : string;
-}
-
-export interface IAvatar {
+export interface IAvatar
+{
 	size : string;
-	url : string;
+	avatarUrl : string;
 }
 
-export interface IProfileModel {
+export interface IProfileModel
+{
 	onlineId : string;
-	personalDetail : IPersonalDetail;
-	aboutMe : string;
-	avatars : IAvatar[];
-	languages : string[];
-	isPlus : boolean;
-	isOfficiallyVerified : boolean;
-	isMe : boolean;
+	avatarUrls : IAvatar[];
+	plus : boolean;
+	primaryOnlineStatus : string;
 }
