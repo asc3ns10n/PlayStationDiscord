@@ -2,7 +2,7 @@ export enum PlayStationConsoleType
 {
 	PS5BC,
 	PS5,
-	PS4,
+	ps4,
 	PS3,
 	PSVITA
 }

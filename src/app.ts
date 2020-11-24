@@ -384,7 +384,7 @@ function updateRichPresence(unifiedPresence: IUnifiedPresenceModel) : void
 	let discordRichPresenceData : IDiscordPresenceModel;
 	let discordRichPresenceOptionsData : IDiscordPresenceUpdateOptions;
 
-	if (previousPresence === undefined || unifiedPresence.platform !== previousPresence.platform && unifiedPresence.format !== previousPresence.format)
+	if (previousPresence === undefined || unifiedPresence.platform !== previousPresence.platform || unifiedPresence.format !== previousPresence.format)
 	{
 		log.info('Switching console to ', unifiedPresence.platform);
 
@@ -400,7 +400,7 @@ function updateRichPresence(unifiedPresence: IUnifiedPresenceModel) : void
 		// If the playing a PS4 game on PS5, set the console type to PS5BC.
 		// Otherwise, set it using the platform
 		let platformType;
-		if (unifiedPresence.format === 'ps4')
+		if (unifiedPresence.platform === 'PS5' && unifiedPresence.format === 'ps4')
 		{
 			platformType = PlayStationConsoleType['PS5BC' as (keyof typeof PlayStationConsoleType)];
 		}
@@ -514,7 +514,7 @@ function getConsoleFromType(type: PlayStationConsoleType) : PlayStationConsole
 			return new PlayStation5BC();
 		case PlayStationConsoleType.PS5:
 			return new PlayStation5();
-		case PlayStationConsoleType.PS4:
+		case PlayStationConsoleType.ps4:
 			return new PlayStation4();
 		case PlayStationConsoleType.PS3:
 			return new PlayStation3();
