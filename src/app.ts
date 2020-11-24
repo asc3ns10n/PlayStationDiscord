@@ -5,6 +5,7 @@ import {PlayStationConsole, PlayStationConsoleType } from './Consoles/PlayStatio
 import { IDiscordPresenceModel, IDiscordPresenceUpdateOptions } from './Model/DiscordPresenceModel';
 import { autoUpdater } from 'electron-updater';
 import axios from 'axios';
+import PlayStation5BC from './Consoles/PlayStation5BC';
 import PlayStation5 from './Consoles/PlayStation5';
 import PlayStation4 from './Consoles/PlayStation4';
 import PlayStation3 from './Consoles/PlayStation3';
@@ -17,7 +18,9 @@ import queryString = require('query-string');
 import log = require('electron-log');
 import url = require('url');
 import path = require('path');
-import { IBasicPresence } from './Model/PresenceModel';
+import { IBasicPresence, IPresenceModel } from './Model/PresenceModel';
+import { ILegacyPresence, ILegacyProfile } from './Model/LegacyPresenceModel';
+import { IUnifiedPresenceModel } from './Model/UnifiedPresenceModel';
 import * as _ from 'lodash';
 
 const isDev = process.env.NODE_ENV === 'dev';
@@ -42,7 +45,10 @@ let playstationAccount : PlayStationAccount;
 
 // Discord stuff
 let discordController : DiscordController;
-let previousPresence : IBasicPresence;
+let presence : IBasicPresence;
+let legacyPresence : ILegacyProfile;
+let unifiedPresence : IUnifiedPresenceModel;
+let previousPresence : IUnifiedPresenceModel;
 
 // Loop Ids
 let updateRichPresenceLoop : NodeJS.Timeout;
@@ -285,149 +291,20 @@ function spawnMainWindow() : void
 let richPresenceRetries : number;
 let supportedTitleId : string;
 
-function updateRichPresence() : void
+function setPresence(data: IBasicPresence) : void
+{
+	presence = data;
+}
+
+function setLegacyPresence(data: ILegacyProfile) : void
+{
+	legacyPresence = data;
+}
+
+function getPresences() : void
 {
 	playstationAccount.presences()
-	.then((presence) => {
-		if (presence.primaryPlatformInfo.onlineStatus !== 'online')
-		{
-			if (discordController && discordController.running())
-			{
-				discordController.stop();
-				previousPresence = undefined;
-
-				log.info('DiscordController stopped because the user is not online on PlayStation');
-			}
-
-			// Just update the form like this so we don't update rich presence.
-			mainWindow.webContents.send('presence-data', {
-				details: 'Offline'
-			});
-		}
-		else if (presence.primaryPlatformInfo.onlineStatus === 'online')
-		{
-			let discordRichPresenceData : IDiscordPresenceModel;
-			let discordRichPresenceOptionsData : IDiscordPresenceUpdateOptions;
-
-			const platform = presence.primaryPlatformInfo.platform;
-			const titleInfo = _.get(presence, ['gameTitleInfoList', 0]);
-			const previousPresenceTitleInfo = _.get(previousPresence, ['gameTitleInfoList', 0]);
-
-			if (previousPresence === undefined || platform !== previousPresence.primaryPlatformInfo.platform)
-			{
-				log.info('Switching console to ', platform);
-
-				// Reset cached presence so we get fresh data.
-				previousPresence = undefined;
-
-				if (discordController)
-				{
-					discordController.stop();
-					discordController = undefined;
-				}
-
-				// @TODO: Check this to make sure platform case matches the consoletype keys.
-				const platformType = PlayStationConsoleType[platform as (keyof typeof PlayStationConsoleType)];
-
-				if (platformType === undefined)
-				{
-					log.error(`Unexpected platform type ${platform} was not found in PlayStationConsoleType`);
-
-					return showMessageAndDie(`An error occurred when trying to assign/switch PlayStation console.`);
-				}
-
-				const playstationConsole = getConsoleFromType(platformType);
-
-				if (playstationConsole === undefined)
-				{
-					log.error(`No suitable PlayStationConsole abstraction could be derived from platform type ${platformType}`);
-
-					return showMessageAndDie(`An error occurred when trying to assign/switch PlayStation console.`);
-				}
-
-				discordController = new DiscordController(playstationConsole);
-
-				log.info('Switched console to', playstationConsole.consoleName);
-			}
-
-			// Setup previous presence with the current presence if it's empty.
-			// Update status if the titleId has changed.
-			if (previousPresence === undefined || _.get(previousPresenceTitleInfo, ['npTitleId']) !== _.get(titleInfo, ['npTitleId']))
-			{
-				// See if we're actually playing a title.
-				if (!_.get(titleInfo, ['npTitleId']))
-				{
-					discordRichPresenceData = {
-						details: 'Online',
-					};
-
-					discordRichPresenceOptionsData = {
-						hideTimestamp: true
-					};
-
-					log.info('Status set to online');
-				}
-				else
-				{
-					discordRichPresenceData = {
-						details: titleInfo.titleName,
-						state: titleInfo.gameStatus,
-						startTimestamp: Date.now(),
-						largeImageText: titleInfo.titleName
-					};
-
-					log.info('Game has switched', titleInfo.titleName);
-
-					const discordFriendly = supportedGames.get(presence);
-
-					if (discordFriendly !== undefined)
-					{
-						supportedTitleId = discordFriendly.titleId.toLowerCase();
-						discordRichPresenceData.largeImageKey = supportedTitleId;
-
-						log.info('Using game icon since it is supported');
-					}
-					else
-					{
-						log.warn('Game icon not found in supported games store', titleInfo.titleName, titleInfo.npTitleId);
-						supportedTitleId = undefined;
-					}
-				}
-			}
-			// Update if game status has changed.
-			else if (previousPresence === undefined || _.get(previousPresenceTitleInfo, ['gameStatus']) !== _.get(titleInfo, ['gameStatus']))
-			{
-				discordRichPresenceData = {
-					details: titleInfo.titleName,
-					state: titleInfo.gameStatus,
-					largeImageText: titleInfo.titleName
-				};
-
-				if (supportedTitleId !== undefined)
-				{
-					discordRichPresenceData.largeImageKey = supportedTitleId;
-				}
-
-				log.info('Game status has changed', titleInfo.gameStatus);
-			}
-
-			// Only send a rich presence update if we have something new and it's enabled.
-			if (discordRichPresenceData !== undefined && store.get('presenceEnabled', true))
-			{
-				// Cache it.
-				previousPresence = presence;
-
-				discordController.update(discordRichPresenceData, discordRichPresenceOptionsData).then(() => {
-					log.info('Updated rich presence');
-					mainWindow.webContents.send('presence-data', discordRichPresenceData);
-				}).catch((err) => {
-					log.error('Failed updating rich presence', err);
-				});
-			}
-		}
-
-		richPresenceRetries = 0;
-	})
+	.then((presence) => setPresence(presence))
 	.catch((err) => {
 		log.error('Failed fetching PSN presence', err);
 
@@ -438,15 +315,206 @@ function updateRichPresence() : void
 			log.error('Stopped rich presence loop because of too many retries without success');
 		}
 	});
+	const onlineStatus = _.get(presence, ['primaryPlatformInfo', 'onlineStatus']);
+
+	playstationAccount.legacyPresences()
+	.then((legacyPresence) => setLegacyPresence(legacyPresence))
+	.catch((err) => {
+		log.error('Failed fetching legacy PSN presence', err);
+
+		if (++richPresenceRetries === 5)
+		{
+			updateRichPresenceLoop = stopTimer(updateRichPresenceLoop);
+
+			log.error('Stopped rich presence loop because of too many retries without success');
+		}
+	});
+	const legacyOnlineStatus = _.get(legacyPresence, ['primaryOnlineStatus']);
+
+	if (onlineStatus !== 'online' && legacyOnlineStatus !== 'online')
+	{
+		if (discordController && discordController.running())
+		{
+			discordController.stop();
+			previousPresence = undefined;
+
+			log.info('DiscordController stopped because the user is not online on PlayStation');
+		}
+
+		// Just update the form like this so we don't update rich presence.
+		mainWindow.webContents.send('presence-data', {
+			details: 'Offline'
+		});
+	}
+	else if (onlineStatus === 'online')
+	{
+		const presenceData = _.get(presence, ['gameTitleInfoList', 0]);
+
+		unifiedPresence = {
+			platform: presence.primaryPlatformInfo.platform,
+			format: _.get(presenceData, ['format']),
+			npTitleId: _.get(presenceData, ['npTitleId']),
+			titleName: _.get(presenceData, ['titleName']),
+			gameStatus: undefined
+		};
+
+		updateRichPresence(unifiedPresence);
+	}
+	else if (legacyOnlineStatus === 'online' && onlineStatus === 'offline')
+	{
+		const presenceData = legacyPresence.presences[0];
+
+		unifiedPresence = {
+			platform: presenceData.platform,
+			format: presenceData.platform,
+			npTitleId: presenceData.npTitleId,
+			titleName: presenceData.titleName,
+			gameStatus: presenceData.gameStatus
+		};
+
+		updateRichPresence(unifiedPresence);
+	}
+
+	richPresenceRetries = 0;
+}
+
+function updateRichPresence(unifiedPresence: IUnifiedPresenceModel) : void
+{
+
+	let discordRichPresenceData : IDiscordPresenceModel;
+	let discordRichPresenceOptionsData : IDiscordPresenceUpdateOptions;
+
+	if (previousPresence === undefined || unifiedPresence.platform !== previousPresence.platform && unifiedPresence.format !== previousPresence.format)
+	{
+		log.info('Switching console to ', unifiedPresence.platform);
+
+		// Reset cached presence so we get fresh data.
+		previousPresence = undefined;
+
+		if (discordController)
+		{
+			discordController.stop();
+			discordController = undefined;
+		}
+
+		// If the playing a PS4 game on PS5, set the console type to PS5BC.
+		// Otherwise, set it using the platform
+		let platformType;
+		if (unifiedPresence.format === 'ps4')
+		{
+			platformType = PlayStationConsoleType['PS5BC' as (keyof typeof PlayStationConsoleType)];
+		}
+		else
+		{
+			platformType = PlayStationConsoleType[unifiedPresence.platform as (keyof typeof PlayStationConsoleType)];
+		}
+
+		if (platformType === undefined)
+		{
+			log.error(`Unexpected platform type ${unifiedPresence.platform} was not found in PlayStationConsoleType`);
+
+			return showMessageAndDie(`An error occurred when trying to assign/switch PlayStation console.`);
+		}
+
+		const playstationConsole = getConsoleFromType(platformType);
+
+		if (playstationConsole === undefined)
+		{
+			log.error(`No suitable PlayStationConsole abstraction could be derived from platform type ${platformType}`);
+
+			return showMessageAndDie(`An error occurred when trying to assign/switch PlayStation console.`);
+		}
+
+		discordController = new DiscordController(playstationConsole);
+
+		log.info('Switched console to', playstationConsole.consoleName);
+	}
+
+	// Setup previous presence with the current presence if it's empty.
+	// Update status if the titleId has changed.
+	if (previousPresence === undefined || previousPresence.npTitleId !== unifiedPresence.npTitleId)
+	{
+		// See if we're actually playing a title.
+		if (unifiedPresence.npTitleId === undefined)
+		{
+			discordRichPresenceData = {
+				details: 'Online',
+			};
+
+			discordRichPresenceOptionsData = {
+				hideTimestamp: true
+			};
+
+			log.info('Status set to online');
+		}
+		else
+		{
+			discordRichPresenceData = {
+				details: unifiedPresence.titleName,
+				state: unifiedPresence.gameStatus,
+				startTimestamp: Date.now(),
+				largeImageText: unifiedPresence.titleName
+			};
+
+			log.info('Game has switched', unifiedPresence.titleName);
+
+			const discordFriendly = supportedGames.get(unifiedPresence);
+
+			if (discordFriendly !== undefined)
+			{
+				supportedTitleId = discordFriendly.titleId.toLowerCase();
+				discordRichPresenceData.largeImageKey = supportedTitleId;
+
+				log.info('Using game icon since it is supported');
+			}
+			else
+			{
+				log.warn('Game icon not found in supported games store', unifiedPresence.titleName, unifiedPresence.npTitleId);
+				supportedTitleId = undefined;
+			}
+		}
+	}
+	// Update if game status has changed.
+	else if (previousPresence === undefined || previousPresence.gameStatus !== previousPresence.gameStatus)
+	{
+		discordRichPresenceData = {
+			details: unifiedPresence.titleName,
+			state: unifiedPresence.gameStatus,
+			largeImageText: unifiedPresence.titleName
+		};
+
+		if (supportedTitleId !== undefined)
+		{
+			discordRichPresenceData.largeImageKey = supportedTitleId;
+		}
+
+		log.info('Game status has changed', unifiedPresence.gameStatus);
+	}
+
+	// Only send a rich presence update if we have something new and it's enabled.
+	if (discordRichPresenceData !== undefined && store.get('presenceEnabled', true))
+	{
+		// Cache it.
+		previousPresence = unifiedPresence;
+
+		discordController.update(discordRichPresenceData, discordRichPresenceOptionsData).then(() => {
+			log.info('Updated rich presence');
+			mainWindow.webContents.send('presence-data', discordRichPresenceData);
+		}).catch((err) => {
+			log.error('Failed updating rich presence', err);
+		});
+	}
 }
 
 function getConsoleFromType(type: PlayStationConsoleType) : PlayStationConsole
 {
 	switch (type)
 	{
+		case PlayStationConsoleType.PS5BC:
+			return new PlayStation5BC();
 		case PlayStationConsoleType.PS5:
 			return new PlayStation5();
-		case PlayStationConsoleType.ps4:
+		case PlayStationConsoleType.PS4:
 			return new PlayStation4();
 		case PlayStationConsoleType.PS3:
 			return new PlayStation3();
@@ -532,11 +600,11 @@ appEvent.on('start-rich-presence', () => {
 	if (!updateRichPresenceLoop)
 	{
 		log.info('Starting rich presence loop');
-		// Start running the rich presence updater.
-		updateRichPresence();
+		// Start getting rich presence data.
+		getPresences();
 
 		// Set the loop timeout id so it can be cancelled globally.
-		updateRichPresenceLoop = setInterval(updateRichPresence, 15000);
+		updateRichPresenceLoop = setInterval(getPresences, 15000);
 	}
 });
 
