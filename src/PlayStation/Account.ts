@@ -3,6 +3,7 @@ import axios from 'axios';
 import appEvent from '../Events';
 import { IProfileModel } from '../Model/ProfileModel';
 import { IBasicPresence, IPresenceModel } from '../Model/PresenceModel';
+import { ILegacyProfile, ILegacyPresenceModel } from '../Model/LegacyPresenceModel';
 import _store = require('electron-store');
 const store = new _store();
 
@@ -240,6 +241,36 @@ export default class PlayStationAccount
 			})
 			.catch((err) => {
 				appEvent.emit('profile-data-failed', err);
+
+				if (err.response)
+				{
+					return reject(err.response.error);
+				}
+
+				return reject(err);
+			});
+		});
+	}
+
+	public legacyPresences() : Promise<ILegacyProfile>
+	{
+		return new Promise<ILegacyProfile>((resolve, reject) => {
+			const accessToken = this.data.access_token;
+
+			axios.get<ILegacyPresenceModel>(`https://us-prof.np.community.playstation.net/userProfile/v1/users/me/profile2?fields=primaryOnlineStatus,presences(@titleInfo)`, {
+				headers: {
+					Authorization: `Bearer ${accessToken}`
+				}
+			})
+			.then((response) => {
+				const responseBody = response.data;
+
+				appEvent.emit('presence-data', responseBody.profile);
+
+				return resolve(responseBody.profile);
+			})
+			.catch((err) => {
+				appEvent.emit('presence-data-failed', err);
 
 				if (err.response)
 				{
